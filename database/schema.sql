@@ -1,0 +1,48 @@
+-- Fresh tables: does not modify previous projects or public.cards.
+create schema if not exists flowboard_private;
+revoke all on schema flowboard_private from public;
+create table public.kb_profiles(user_id uuid primary key references auth.users(id) on delete cascade, is_admin boolean not null default false, suspended boolean not null default false);
+create table public.kb_boards(id uuid primary key default gen_random_uuid(),title text not null check(length(trim(title)) between 1 and 200),owner_id uuid not null references auth.users(id),created_at timestamptz not null default now());
+create table public.kb_members(board_id uuid references public.kb_boards(id) on delete cascade,user_id uuid references auth.users(id) on delete cascade,primary key(board_id,user_id));
+create index kb_members_user on public.kb_members(user_id);
+create table public.kb_cards(id uuid primary key default gen_random_uuid(),board_id uuid not null references public.kb_boards(id) on delete cascade,title text not null check(length(trim(title)) between 1 and 200),status text not null default 'todo' check(status in ('todo','doing','done')),created_at timestamptz not null default now());
+create index kb_cards_board on public.kb_cards(board_id);
+create index kb_boards_owner on public.kb_boards(owner_id);
+create function flowboard_private.active() returns boolean language sql stable security definer set search_path='' as $$ select auth.uid() is not null and not exists(select 1 from public.kb_profiles where user_id=auth.uid() and suspended); $$;
+create function flowboard_private.access(b uuid) returns boolean language sql stable security definer set search_path='' as $$ select flowboard_private.active() and (exists(select 1 from public.kb_boards where id=b and owner_id=auth.uid()) or exists(select 1 from public.kb_members where board_id=b and user_id=auth.uid())); $$;
+create function flowboard_private.owns(b uuid) returns boolean language sql stable security definer set search_path='' as $$ select flowboard_private.active() and exists(select 1 from public.kb_boards where id=b and owner_id=auth.uid()); $$;
+revoke all on all functions in schema flowboard_private from public;
+grant usage on schema flowboard_private to authenticated;
+grant execute on all functions in schema flowboard_private to authenticated;
+alter table public.kb_profiles enable row level security;
+alter table public.kb_boards enable row level security;
+alter table public.kb_members enable row level security;
+alter table public.kb_cards enable row level security;
+create policy own_profile on public.kb_profiles for select to authenticated using(user_id=(select auth.uid()));
+create policy read_boards on public.kb_boards for select to authenticated using(flowboard_private.access(id));
+create policy add_boards on public.kb_boards for insert to authenticated with check(owner_id=(select auth.uid()) and flowboard_private.active());
+create policy read_members on public.kb_members for select to authenticated using(flowboard_private.access(board_id));
+create policy add_members on public.kb_members for insert to authenticated with check(flowboard_private.owns(board_id));
+create policy remove_members on public.kb_members for delete to authenticated using(flowboard_private.owns(board_id));
+create policy read_cards on public.kb_cards for select to authenticated using(flowboard_private.access(board_id));
+create policy add_cards on public.kb_cards for insert to authenticated with check(flowboard_private.access(board_id));
+create policy move_cards on public.kb_cards for update to authenticated using(flowboard_private.access(board_id)) with check(flowboard_private.access(board_id));
+create policy delete_cards on public.kb_cards for delete to authenticated using(flowboard_private.access(board_id));
+revoke all on public.kb_profiles,public.kb_boards,public.kb_members,public.kb_cards from anon,authenticated;
+grant select on public.kb_profiles to authenticated;
+grant select,insert on public.kb_boards to authenticated;
+grant select,insert,delete on public.kb_members to authenticated;
+grant select,insert,delete on public.kb_cards to authenticated;
+grant update(status) on public.kb_cards to authenticated;
+create function public.kb_admin_users() returns table(user_id uuid,email text,suspended boolean) language plpgsql security definer set search_path='' as $$ begin
+if not exists(select 1 from public.kb_profiles p where p.user_id=auth.uid() and p.is_admin and not p.suspended) then raise insufficient_privilege; end if;
+return query select u.id,u.email::text,coalesce(p.suspended,false) from auth.users u left join public.kb_profiles p on u.id=p.user_id order by u.created_at;
+end $$;
+create function public.kb_set_suspended(target uuid,value boolean) returns void language plpgsql security definer set search_path='' as $$ begin
+if not exists(select 1 from public.kb_profiles p where p.user_id=auth.uid() and p.is_admin and not p.suspended) or target=auth.uid() then raise insufficient_privilege; end if;
+insert into public.kb_profiles(user_id,suspended) values(target,value) on conflict(user_id) do update set suspended=excluded.suspended;
+end $$;
+revoke all on function public.kb_admin_users() from public,anon;
+revoke all on function public.kb_set_suspended(uuid,boolean) from public,anon;
+grant execute on function public.kb_admin_users() to authenticated;
+grant execute on function public.kb_set_suspended(uuid,boolean) to authenticated;
