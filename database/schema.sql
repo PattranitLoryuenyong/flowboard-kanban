@@ -19,7 +19,7 @@ alter table public.kb_boards enable row level security;
 alter table public.kb_members enable row level security;
 alter table public.kb_cards enable row level security;
 create policy own_profile on public.kb_profiles for select to authenticated using(user_id=(select auth.uid()));
-create policy read_boards on public.kb_boards for select to authenticated using(flowboard_private.access(id));
+create policy read_boards on public.kb_boards for select to authenticated using((owner_id=(select auth.uid()) and flowboard_private.active()) or flowboard_private.access(id));
 create policy add_boards on public.kb_boards for insert to authenticated with check(owner_id=(select auth.uid()) and flowboard_private.active());
 create policy read_members on public.kb_members for select to authenticated using(flowboard_private.access(board_id));
 create policy add_members on public.kb_members for insert to authenticated with check(flowboard_private.owns(board_id));
