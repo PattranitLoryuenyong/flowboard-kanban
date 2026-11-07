@@ -32,7 +32,8 @@ Public users cannot modify this table. No default admin or password is shipped. 
 See `docs/VALIDATION.md` for verification limits and the test-first workflow limitation. Planning docs follow the supplied Matt Pocock document layout and are committed under `.scratch/` and `docs/`.
 
 ## GitHub
-This is a new local git repository, with a feature branch merged into main. Create a new empty public GitHub repository for this fresh code, then push main and the feature branch. The current GitHub connector cannot create repositories, and the CLI/browser are not signed in. The supplied git bundle preserves history without including secrets or dependencies. Existing repositories were not modified.
+Public repository: https://github.com/PattranitLoryuenyong/flowboard-kanban
+Implementation was uploaded on feature/kanban and merged into main through pull request #1. Existing project repositories were not modified.
 
 ## Costs
 No paid resources were enabled. Free tier quotas and email limits still apply. Production deployment and billing settings are the user's responsibility.
